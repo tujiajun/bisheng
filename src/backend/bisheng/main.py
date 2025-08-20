@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
-from bisheng.api import router, router_rpc
+from bisheng.api import router, router_rpc, router_reg
 from bisheng.database.init_data import init_default_data
 from bisheng.interface.utils import setup_llm_caching
 from bisheng.services.utils import initialize_services, teardown_services
@@ -94,6 +94,7 @@ def create_app():
 
     app.include_router(router)
     app.include_router(router_rpc)
+    app.include_router(router_reg)
     return app
 
 

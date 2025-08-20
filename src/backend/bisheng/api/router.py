@@ -9,6 +9,7 @@ from bisheng.api.v2 import (assistant_router_rpc, chat_router_rpc, flow_router,
                             knowledge_router_rpc, rpc_router_rpc, workflow_router_rpc,
                             workstation_router_rpc)
 from fastapi import APIRouter
+from bisheng.api.new import userreg_router
 
 router = APIRouter(prefix='/api/v1', )
 router.include_router(chat_router)
@@ -42,3 +43,6 @@ router_rpc.include_router(flow_router)
 router_rpc.include_router(assistant_router_rpc)
 router_rpc.include_router(workflow_router_rpc)
 router_rpc.include_router(workstation_router_rpc)
+
+router_reg = APIRouter(prefix='/api/user', )
+router_reg.include_router(userreg_router)
