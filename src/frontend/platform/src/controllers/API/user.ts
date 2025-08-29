@@ -19,6 +19,12 @@ export async function getUserInfo(): Promise<User> {
 export async function logoutApi() {
   return await axios.post(`/api/v1/user/logout`);
 }
+// sso免密登录
+export async function ssoLoginApi(e_token){
+    return await axios.post(`/api/user/sso_login`,null,{
+        headers: {"Authorization" : "Bearer " + `${e_token}`}
+    });
+}
 // 登录
 export async function loginApi(name, pwd, captcha_key?, captcha?) {
   return await axios.post(`/api/v1/user/login`, {
