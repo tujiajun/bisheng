@@ -140,7 +140,7 @@ export default function App() {
 
   // 已登录清除eToken
   useEffect(() => {
-    if(user){
+    if(localStorage.getItem("isLogin")==='1'){
       const url = new URL(window.location.href);
       url.searchParams.delete('eToken');
       const cleanUrl = url.toString();
