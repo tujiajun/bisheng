@@ -7,13 +7,14 @@ import { Button } from "../../components/bs-ui/button";
 import { Input } from "../../components/bs-ui/input";
 // import { alertContext } from "../contexts/alertContext";
 import { useToast } from "@/components/bs-ui/toast/use-toast";
-import { useNavigate } from 'react-router-dom';
-import { getCaptchaApi, loginApi, registerApi } from "../../controllers/API/user";
+import { useNavigate, useSearchParams} from 'react-router-dom';
+import { getCaptchaApi, loginApi, registerApi, ssoLoginApi } from "../../controllers/API/user";
 import { captureAndAlertRequestErrorHoc } from "../../controllers/request";
 import LoginBridge from './loginBridge';
 import { PWD_RULE, handleEncrypt, handleLdapEncrypt } from './utils';
 import { locationContext } from '@/contexts/locationContext';
 import { ldapLoginApi } from '@/controllers/API/pro';
+import { Loader2 } from "lucide-react";
 
 export const LoginPage = () => {
     // const { setErrorData, setSuccessData } = useContext(alertContext);
@@ -43,6 +44,53 @@ export const LoginPage = () => {
         getCaptchaApi().then(setCaptchaData)
     };
 
+    // sso免密登录
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState("");
+    const [searchParams,setSearchParams] = useSearchParams();
+    useEffect(() => {
+        const eToken = searchParams.get("eToken");
+        if (!eToken) {
+            setError("缺少e-token参数");
+            setLoading(false);
+            return;
+        }else {
+            // 调用SSO登录接口
+            handleSsoLogin(eToken);
+        }
+    }, [searchParams]);
+
+    const handleSsoLogin = async (eToken: string) => {
+        try {
+            // 使用ssoLoginApi方法进行SSO登录
+            await captureAndAlertRequestErrorHoc(
+                ssoLoginApi(eToken).then((res) => {
+                    window.self === window.top ? localStorage.removeItem('ws_token') : localStorage.setItem('ws_token', res.data.access_token)
+                    localStorage.setItem('isLogin', '1')
+
+                    // 获取当前URL并移除eToken参数
+                    const url = new URL(window.location.href);
+                    url.searchParams.delete('eToken');
+                    const cleanUrl = url.toString();
+                    window.history.replaceState({}, '', cleanUrl);
+
+                    // 跳转到清理后的URL
+                    location.href = cleanUrl;
+                })
+            )
+        } catch (error) {
+            console.error("SSO登录错误:", error);
+            setError("token不存在");
+            message({
+                title: "免密登录失败",
+                variant: "error",
+                description: "免密登录失败，请使用账号密码登录"
+            });
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const [isLDAP, setIsLDAP] = useState(false)
     const handleLogin = async () => {
         const error = []
@@ -63,8 +111,8 @@ export const LoginPage = () => {
         const encryptPwd = isLDAP ? await handleLdapEncrypt(pwd) : await handleEncrypt(pwd)
         captureAndAlertRequestErrorHoc(
             (isLDAP
-                ? ldapLoginApi(mail, encryptPwd)
-                : loginApi(mail, encryptPwd, captchaData.captcha_key, captchaRef.current?.value)
+                    ? ldapLoginApi(mail, encryptPwd)
+                    : loginApi(mail, encryptPwd, captchaData.captcha_key, captchaRef.current?.value)
             ).then((res: any) => {
                 window.self === window.top ? localStorage.removeItem('ws_token') : localStorage.setItem('ws_token', res.access_token)
                 localStorage.setItem('isLogin', '1')
@@ -125,102 +173,115 @@ export const LoginPage = () => {
         fetchCaptchaData()
     }
 
-    return <div className='w-full h-full bg-background-dark'>
-        <div className='fixed z-10 sm:w-[1280px] w-full sm:h-[720px] h-full translate-x-[-50%] translate-y-[-50%] left-[50%] top-[50%] border rounded-lg shadow-xl overflow-hidden bg-background-login'>
-            <div className='w-[420px] h-[704px] m-[8px] hidden sm:block relative z-20'>
-                <img src={__APP_ENV__.BASE_URL + '/login-logo-big.png'} alt="logo_picture" className='w-full h-full dark:hidden' />
-                <img src={__APP_ENV__.BASE_URL + '/login-logo-dark.png'} alt="logo_picture" className='w-full h-full hidden dark:block' />
-                {/* <iframe src={__APP_ENV__.BASE_URL + '/face.html'} className='w-full h-full'></iframe> */}
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center h-screen">
+                <div className="text-center">
+                    <Loader2 className="h-12 w-12 animate-spin mx-auto text-blue-500" />
+                    <p className="mt-4 text-lg">正在登录中，请稍候...</p>
+                </div>
             </div>
-            <div className='absolute w-full h-full z-10 flex justify-end top-0'>
-                <div className='w-[852px] sm:px-[266px] px-[20px] pyx-[200px] bg-background-login relative'>
-                    <div>
-                        <img src={__APP_ENV__.BASE_URL + '/login-logo-small.png'} className="block w-[114px] h-[36px] m-auto mt-[140px] dark:w-[124px] dark:pr-[10px] dark:hidden" alt="" />
-                        <img src={__APP_ENV__.BASE_URL + '/logo-small-dark.png'} className="w-[114px] h-[36px] m-auto mt-[140px] dark:w-[124px] dark:pr-[10px] dark:block hidden" alt="" />
-                        <span className='block w-fit m-auto font-normal text-[14px] text-tx-color mt-[24px]'>{t('login.slogen')}</span>
-                    </div>
-                    <div className="grid gap-[12px] mt-[68px]">
-                        <div className="grid">
-                            <Input
-                                id="email"
-                                className='h-[48px] dark:bg-login-input'
-                                ref={mailRef}
-                                placeholder={t('login.account')}
-                                type="email"
-                                autoCapitalize="none"
-                                autoComplete="email"
-                                autoCorrect="off"
-                            />
+        );
+    }
+
+    if (error) {
+        return <div className='w-full h-full bg-background-dark'>
+            <div className='fixed z-10 sm:w-[1280px] w-full sm:h-[720px] h-full translate-x-[-50%] translate-y-[-50%] left-[50%] top-[50%] border rounded-lg shadow-xl overflow-hidden bg-background-login'>
+                <div className='w-[420px] h-[704px] m-[8px] hidden sm:block relative z-20'>
+                    <img src={__APP_ENV__.BASE_URL + '/login-logo-big.png'} alt="logo_picture" className='w-full h-full dark:hidden' />
+                    <img src={__APP_ENV__.BASE_URL + '/login-logo-dark.png'} alt="logo_picture" className='w-full h-full hidden dark:block' />
+                    {/* <iframe src={__APP_ENV__.BASE_URL + '/face.html'} className='w-full h-full'></iframe> */}
+                </div>
+                <div className='absolute w-full h-full z-10 flex justify-end top-0'>
+                    <div className='w-[852px] sm:px-[266px] px-[20px] pyx-[200px] bg-background-login relative'>
+                        <div>
+                            <img src={__APP_ENV__.BASE_URL + '/login-logo-small.png'} className="block w-[114px] h-[36px] m-auto mt-[140px] dark:w-[124px] dark:pr-[10px] dark:hidden" alt="" />
+                            <img src={__APP_ENV__.BASE_URL + '/logo-small-dark.png'} className="w-[114px] h-[36px] m-auto mt-[140px] dark:w-[124px] dark:pr-[10px] dark:block hidden" alt="" />
+                            <span className='block w-fit m-auto font-normal text-[14px] text-tx-color mt-[24px]'>{t('login.slogen')}</span>
                         </div>
-                        <div className="grid">
-                            <Input
-                                id="pwd"
-                                className='h-[48px] dark:bg-login-input'
-                                ref={pwdRef}
-                                placeholder={t('login.password')}
-                                type="password"
-                                onKeyDown={e => e.key === 'Enter' && showLogin && handleLogin()} />
-                        </div>
-                        {
-                            !showLogin && <div className="grid">
-                                <Input id="pwd"
-                                    className='h-[48px] dark:bg-login-input'
-                                    ref={agenPwdRef}
-                                    placeholder={t('login.confirmPassword')}
-                                    type="password" />
-                            </div>
-                        }
-                        {
-                            captchaData.user_capthca && (<div className="flex items-center gap-4">
+                        <div className="grid gap-[12px] mt-[68px]">
+                            <div className="grid">
                                 <Input
-                                    type="text"
-                                    ref={captchaRef}
-                                    placeholder={t('login.pleaseEnterCaptcha')}
-                                    className="form-input px-4 py-2 border border-gray-300 focus:outline-none"
-                                />
-                                <img
-                                    src={'data:image/jpg;base64,' + captchaData.captcha} // 这里应该是你的验证码图片的URL
-                                    alt="captcha"
-                                    onClick={fetchCaptchaData} // 这里应该是你的刷新验证码函数
-                                    className="cursor-pointer h-10 bg-gray-100 border border-gray-300"
-                                    style={{ width: '120px' }} // 根据需要调整宽度
+                                    id="email"
+                                    className='h-[48px] dark:bg-login-input'
+                                    ref={mailRef}
+                                    placeholder={t('login.account')}
+                                    type="email"
+                                    autoCapitalize="none"
+                                    autoComplete="email"
+                                    autoCorrect="off"
                                 />
                             </div>
-                            )
-                        }
-                        {
-                            showLogin ? <>
-                                <div className="text-center">
-                                    {!isLDAP && appConfig.register && <a href="javascript:;" className=" text-blue-500 text-sm hover:underline" onClick={() => setShowLogin(false)}>{t('login.noAccountRegister')}</a>}
+                            <div className="grid">
+                                <Input
+                                    id="pwd"
+                                    className='h-[48px] dark:bg-login-input'
+                                    ref={pwdRef}
+                                    placeholder={t('login.password')}
+                                    type="password"
+                                    onKeyDown={e => e.key === 'Enter' && showLogin && handleLogin()} />
+                            </div>
+                            {
+                                !showLogin && <div className="grid">
+                                    <Input id="pwd"
+                                           className='h-[48px] dark:bg-login-input'
+                                           ref={agenPwdRef}
+                                           placeholder={t('login.confirmPassword')}
+                                           type="password" />
                                 </div>
-                                <Button
-                                    className='h-[48px] mt-[32px] dark:bg-button'
-                                    disabled={isLoading} onClick={handleLogin} >{t('login.loginButton')}</Button>
-                            </> :
-                                <>
-                                    <div className="text-center">
-                                        <a href="javascript:;" className=" text-blue-500 text-sm hover:underline" onClick={() => setShowLogin(true)}>{t('login.haveAccountLogin')}</a>
+                            }
+                            {
+                                captchaData.user_capthca && (<div className="flex items-center gap-4">
+                                        <Input
+                                            type="text"
+                                            ref={captchaRef}
+                                            placeholder={t('login.pleaseEnterCaptcha')}
+                                            className="form-input px-4 py-2 border border-gray-300 focus:outline-none"
+                                        />
+                                        <img
+                                            src={'data:image/jpg;base64,' + captchaData.captcha} // 这里应该是你的验证码图片的URL
+                                            alt="captcha"
+                                            onClick={fetchCaptchaData} // 这里应该是你的刷新验证码函数
+                                            className="cursor-pointer h-10 bg-gray-100 border border-gray-300"
+                                            style={{ width: '120px' }} // 根据需要调整宽度
+                                        />
                                     </div>
-                                    <Button
-                                        className='h-[48px] mt-[32px] dark:bg-button'
-                                        disabled={isLoading} onClick={handleRegister} >{t('login.registerButton')}</Button>
-                                </>
-                        }
-                        {appConfig.isPro && <LoginBridge onHasLdap={setIsLDAP} />}
-                    </div>
-                    <div className=" absolute right-[16px] bottom-[16px] flex">
-                        <span className="mr-4 text-sm text-gray-400 relative top-2">v{json.version}</span>
-                        {!appConfig.noFace && <div className='help flex'>
-                            <a href={"https://github.com/dataelement/bisheng"} target="_blank">
-                                <GithubIcon className="block h-[40px] w-[40px] gap-1 border p-[10px] rounded-[8px] mx-[8px] hover:bg-[#1b1f23] hover:text-[white] hover:cursor-pointer" />
-                            </a>
-                            <a href={"https://m7a7tqsztt.feishu.cn/wiki/ZxW6wZyAJicX4WkG0NqcWsbynde"} target="_blank">
-                                <BookOpenIcon className="block h-[40px] w-[40px] gap-1 border p-[10px] rounded-[8px]  hover:bg-[#0055e3] hover:text-[white] hover:cursor-pointer" />
-                            </a>
-                        </div>}
+                                )
+                            }
+                            {
+                                showLogin ? <>
+                                        <div className="text-center">
+                                            {!isLDAP && appConfig.register && <a href="javascript:;" className=" text-blue-500 text-sm hover:underline" onClick={() => setShowLogin(false)}>{t('login.noAccountRegister')}</a>}
+                                        </div>
+                                        <Button
+                                            className='h-[48px] mt-[32px] dark:bg-button'
+                                            disabled={isLoading} onClick={handleLogin} >{t('login.loginButton')}</Button>
+                                    </> :
+                                    <>
+                                        <div className="text-center">
+                                            <a href="javascript:;" className=" text-blue-500 text-sm hover:underline" onClick={() => setShowLogin(true)}>{t('login.haveAccountLogin')}</a>
+                                        </div>
+                                        <Button
+                                            className='h-[48px] mt-[32px] dark:bg-button'
+                                            disabled={isLoading} onClick={handleRegister} >{t('login.registerButton')}</Button>
+                                    </>
+                            }
+                            {appConfig.isPro && <LoginBridge onHasLdap={setIsLDAP} />}
+                        </div>
+                        <div className=" absolute right-[16px] bottom-[16px] flex">
+                            <span className="mr-4 text-sm text-gray-400 relative top-2">v{json.version}</span>
+                            {!appConfig.noFace && <div className='help flex'>
+                                <a href={"https://github.com/dataelement/bisheng"} target="_blank">
+                                    <GithubIcon className="block h-[40px] w-[40px] gap-1 border p-[10px] rounded-[8px] mx-[8px] hover:bg-[#1b1f23] hover:text-[white] hover:cursor-pointer" />
+                                </a>
+                                <a href={"https://m7a7tqsztt.feishu.cn/wiki/ZxW6wZyAJicX4WkG0NqcWsbynde"} target="_blank">
+                                    <BookOpenIcon className="block h-[40px] w-[40px] gap-1 border p-[10px] rounded-[8px]  hover:bg-[#0055e3] hover:text-[white] hover:cursor-pointer" />
+                                </a>
+                            </div>}
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
-    </div>
+    }
 };
