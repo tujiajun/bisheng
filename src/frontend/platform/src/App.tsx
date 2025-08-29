@@ -138,6 +138,15 @@ export default function App() {
 
   const { user, setUser } = useContext(userContext);
 
+  // 已登录清除eToken
+  useEffect(() => {
+    if(user){
+      const url = new URL(window.location.href);
+      url.searchParams.delete('eToken');
+      const cleanUrl = url.toString();
+      window.history.replaceState({}, '', cleanUrl);
+    }
+  }, []);
   // 退出
   useEffect(() => {
     const handleKeyDown = (event) => {
